@@ -2,6 +2,8 @@
 
 // Set include path to look for classes in the models directory, then in the controllers directory
 $projectDir = dirname(dirname(__FILE__));
+define('PROJECT_DIR', $projectDir);
+define('SEP', DIRECTORY_SEPARATOR);
 $classDirectories = ['models', 'controllers'];
 $classPaths = [];
 foreach ($classDirectories as $dir) {
@@ -14,6 +16,12 @@ set_include_path($includePath);
 // Set up autoload function
 spl_autoload_register(['Controller', 'autoload']);
 
+function abs_path($projectPath) {
+    return PROJECT_DIR . DIRECTORY_SEPARATOR . str_replace(
+        ['/', '\\'], DIRECTORY_SEPARATOR, $projectPath
+    );
+}
+
 /**
  * The Controller class is an abstract class used to handle user requests and make use of various
  * models and views.
@@ -23,12 +31,7 @@ spl_autoload_register(['Controller', 'autoload']);
  */
 abstract class Controller
 {
-    const DSN_CONFIG_FILE = 'config/Database.ini';
-    const DATABASE_SCHEMA_FILE = 'sql/schema.sql';
-    const DATABASE_SCHEMA_FILE_MYSQL = 'sql/schema_mysql.sql';
-    const DATABASE_SCHEMA_FILE_POSTGRESQL = 'sql/schema_postgresql.sql';
     const INITIAL_DATA_FILE = 'sql/initial_data.sql';
-    const SESSION_NAME = 'SURVEYFORMAPP';
     const RUNTIME_EXCEPTION_VIEW = 'runtime_exception.php';
 
     protected $config;
@@ -36,6 +39,24 @@ abstract class Controller
     protected $driver = 'sqlite';
     protected $pdo;
     protected $viewVariables = [];
+
+    protected $dsnConfigFile = '';
+    protected $databaseSchemaFile = '';
+    protected $databaseSchemaFileMysql = '';
+    protected $databaseSchemaFilePostgresql = '';
+    protected $initialDataFile = '';
+    protected $sessionName = '';
+    protected $runtimeExceptionView = '';
+
+    function __construct() {
+        $this->dsnConfigFile = PROJECT_DIR . DIRECTORY_SEPARATOR . 'config' . DIRECTORY_SEPARATOR . 'Database.ini';
+        $this->databaseSchemaFile = PROJECT_DIR . DIRECTORY_SEPARATOR . 'sql' . DIRECTORY_SEPARATOR . 'schema.sql';
+        $this->databaseSchemaFileMysql = PROJECT_DIR . DIRECTORY_SEPARATOR . 'sql' . DIRECTORY_SEPARATOR . 'schema_mysql.sql';
+        $this->databaseSchemaFilePostgresql = PROJECT_DIR . DIRECTORY_SEPARATOR . 'sql' . DIRECTORY_SEPARATOR . 'schema_postgresql.sql';
+        $this->initialDataFile = PROJECT_DIR . DIRECTORY_SEPARATOR . 'sql' . DIRECTORY_SEPARATOR . 'initial_data.sql';
+        $this->sessionName = 'survey-session';
+        $this->runtimeExceptionView = PROJECT_DIR . DIRECTORY_SEPARATOR . 'runtime_exception.php';
+    }
 
     /**
      * Automatically load the necessary file for a given class.
@@ -74,7 +95,7 @@ abstract class Controller
             $this->displayView($viewFilename);
         } catch (RuntimeException $e) {
             $this->assign('statusMessage', $e->getMessage());
-            $this->displayView(self::RUNTIME_EXCEPTION_VIEW);
+            $this->displayView($this->runtimeExceptionView);
         } catch (Exception $e) {
             // Handle exception
             $this->handleError($e);
@@ -148,13 +169,11 @@ abstract class Controller
     }
 
     /**
-     * Start a new session with the session name defined in the
-     * SESSION_NAME class constant.
+     * Start a new session with the session name
      */
     protected function startSession()
     {
-        session_name(self::SESSION_NAME);
-
+        session_name($this->sessionName);
         session_start();
     }
 
@@ -237,12 +256,12 @@ abstract class Controller
      */
     protected function openDatabase()
     {
-        if (! file_exists(self::DSN_CONFIG_FILE)) {
-            throw new RuntimeException('Database config file not found: ' . self::DSN_CONFIG_FILE);
+        if (! file_exists($this->dsnConfigFile)) {
+            throw new RuntimeException('Database config file not found: ' . $this->dsnConfigFile);
         }
-        $databaseConfig = parse_ini_file(self::DSN_CONFIG_FILE);
+        $databaseConfig = parse_ini_file($this->dsnConfigFile);
         if (! isset($databaseConfig['dsn'])) {
-            throw new RuntimeException("Database config parameter 'dsn' not found in config file: " . self::DSN_CONFIG_FILE);
+            throw new RuntimeException("Database config parameter 'dsn' not found in config file: " . $this->dsnConfigFile);
         }
 
         $username = null;
@@ -251,16 +270,16 @@ abstract class Controller
         if (preg_match('/^(mysql|pgsql)/', $databaseConfig['dsn'], $matches)) {
             $this->driver = $matches[1];
             if (! isset($databaseConfig['username'])) {
-                throw new RuntimeException("Database config parameter 'username' not found in config file: " . self::DSN_CONFIG_FILE);
+                throw new RuntimeException("Database config parameter 'username' not found in config file: " . $this->dsnConfigFile);
             }
             if (! isset($databaseConfig['password'])) {
-                throw new RuntimeException("Database config parameter 'password' not found in config file: " . self::DSN_CONFIG_FILE);
+                throw new RuntimeException("Database config parameter 'password' not found in config file: " . $this->dsnConfigFile);
             }
             $username = $databaseConfig['username'];
             $password = $databaseConfig['password'];
         } else {
             if (! isset($databaseConfig['filename'])) {
-                throw new RuntimeException("Database config parameter 'filename' not found in config file: " . self::DSN_CONFIG_FILE);
+                throw new RuntimeException("Database config parameter 'filename' not found in config file: " . $this->dsnConfigFile);
             }
             if (! is_writable(dirname($databaseConfig['filename']))) {
                 throw new RuntimeException('Data directory not writable by web server: ' . dirname($databaseConfig['filename']) . '/');
@@ -289,11 +308,11 @@ abstract class Controller
      */
     protected function createDatabaseTables()
     {
-        $schemaFile = self::DATABASE_SCHEMA_FILE;
+        $schemaFile = $this->databaseSchemaFile;;
         if ($this->driver == 'mysql') {
-            $schemaFile = self::DATABASE_SCHEMA_FILE_MYSQL;
+            $schemaFile = $this->databaseSchemaFileMysql;
         } elseif ($this->driver == 'pgsql') {
-            $schemaFile = self::DATABASE_SCHEMA_FILE_POSTGRESQL;
+            $schemaFile = $this->databaseSchemaFilePostgresql;
         }
 
         if (! file_exists($schemaFile)) {
@@ -304,7 +323,7 @@ abstract class Controller
         $this->pdo->exec($sql);
 
         // Load initial data
-        $sql = file_get_contents(self::INITIAL_DATA_FILE);
+        $sql = file_get_contents($this->initialDataFile);
         $this->pdo->exec($sql);
     }
 

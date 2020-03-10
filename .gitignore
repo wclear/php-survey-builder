@@ -1,0 +1,4 @@
+/data/*
+!/data/.empty
+/config/*
+!/config/DatabaseSample.ini
